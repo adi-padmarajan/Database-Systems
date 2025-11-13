@@ -1,0 +1,422 @@
+/*
+This part focuses on soccer analytics using SQL.
+
+1. Data Setup
+   - Import the provided CSV files:
+       england.csv, france.csv, germany.csv, italy.csv
+   - Use DataGrip to import the files and automatically create the tables.
+   - The resulting tables will be named: England, France, Germany, and Italy.
+   - Each table contains over 100 years of soccer game statistics.
+   - When importing, carefully assign the correct datatypes for each column.
+
+2. Tasks
+   - Write SQL statements to answer the questions provided.
+   - For each question, replace the placeholder text 
+     ("Your query here") with your SQL query.
+
+3. Submission
+   - Submit this SQL file with your completed queries.
+   - Submit one PDF file (soccer_viz.pdf) containing your visualizations for Questions 2, 7, 9, and 10.
+     * Clearly label each visualization with the corresponding question number (e.g., Q2, Q7, Q9, Q10).
+*/
+
+
+
+/*Q1 (1 pt)
+Find all the games in England between seasons 1920 and 1999 such that the total goals are at least 13.
+Order by total goals descending.*/
+
+/*Your query here*/
+SELECT
+    date, season, home, visitor, hgoal, vgoal, tier, totgoal, goaldif, result
+FROM England
+WHERE season BETWEEN 1920 AND 1999
+  AND totgoal >= 13
+ORDER BY totgoal DESC, date ASC;
+/*Sample result
+1935-12-26,1935,Tranmere Rovers,Oldham Athletic,13,4,3,17,9,H
+1958-10-11,1958,Tottenham Hotspur,Everton,10,4,1,14,6,H
+...*/
+
+
+/*Q2 (2 pt)
+For each total goal result, find how many games had that result.
+Use the england table and consider only the seasons since 1980.
+Order by total goal.*/
+
+/*Your query here*/
+SELECT
+    totgoal,
+    COUNT(*) AS games
+FROM England
+WHERE season >= 1980
+  AND totgoal IS NOT NULL
+GROUP BY totgoal
+ORDER BY totgoal ASC;
+/*Sample result
+0,6085
+1,14001
+...*/
+
+/*Visualize the results using a barchart.*/
+
+
+/*Q3 (2 pt)
+Find for each team in England in tier 1 the total number of games played since 1980.
+Report only teams with at least 300 games.
+
+Hint. Find the number of games each team has played as "home".
+Find the number of games each team has played as "visitor".
+Then union the two and take the sum of the number of games.
+*/
+
+/*Your query here*/
+WITH games AS (
+    -- appearances as HOME
+    SELECT home AS team, COUNT(*) AS n
+    FROM England
+    WHERE season >= 1980 AND tier = 1
+    GROUP BY home
+
+    UNION ALL
+
+    -- appearances as VISITOR
+    SELECT visitor AS team, COUNT(*) AS n
+    FROM England
+    WHERE season >= 1980 AND tier = 1
+    GROUP BY visitor
+)
+SELECT
+    team,
+    SUM(n) AS games_played
+FROM games
+GROUP BY team
+HAVING SUM(n) >= 300
+ORDER BY games_played DESC, team;
+/*Sample result
+Everton,1451
+Liverpool,1451
+...*/
+
+
+/*Q4 (1 pt)
+For each pair team1, team2 in England, in tier 1,
+find the number of home-wins since 1980 of team1 versus team2.
+Order the results by the number of home-wins in descending order.
+
+Hint. After selecting the tuples needed (... WHERE tier=1 AND ...) do a GROUP BY home, visitor.
+*/
+
+/*Your query here*/
+SELECT
+    home   AS team1,
+    visitor AS team2,
+    COUNT(*) AS home_wins
+FROM England
+WHERE season >= 1980
+  AND tier = 1
+  AND result = 'H'      -- home win
+GROUP BY home, visitor
+ORDER BY home_wins DESC, team1, team2;
+
+/*Sample result
+Manchester United,Tottenham Hotspur,27
+Arsenal,Everton,26
+...*/
+
+
+/*Q5 (1 pt)
+For each pair team1, team2 in England in tier 1
+find the number of away-wins since 1980 of team1 versus team2.
+Order the results by the number of away-wins in descending order.*/
+
+/*Your query here*/
+SELECT
+    visitor AS team1,      -- away team
+    home    AS team2,      -- home team
+    COUNT(*) AS away_wins
+FROM England
+WHERE season >= 1980
+  AND tier = 1
+  AND result = 'A'       -- away win
+GROUP BY visitor, home
+ORDER BY away_wins DESC, team1, team2;
+/*Sample result
+Manchester United,Aston Villa,18
+Manchester United,Everton,17
+...*/
+
+
+/*Q6 (2 pt)
+For each pair team1, team2 in England in tier 1 report the number of home-wins and away-wins
+since 1980 of team1 versus team2.
+Order the results by the number of away-wins in descending order.
+
+Hint. Join the results of the two previous queries. To do that you can use those
+queries as subqueries. Remove their ORDER BY clause when making them subqueries.
+Be careful on the join conditions.
+*/
+
+/*Your query here*/
+WITH wins AS (
+    -- home wins by team1 vs team2
+    SELECT
+        home   AS team1,
+        visitor AS team2,
+        1 AS home_win,
+        0 AS away_win
+    FROM England
+    WHERE season >= 1980 AND tier = 1 AND result = 'H'
+
+    UNION ALL
+
+    -- away wins by team1 vs team2
+    SELECT
+        visitor AS team1,
+        home    AS team2,
+        0 AS home_win,
+        1 AS away_win
+    FROM England
+    WHERE season >= 1980 AND tier = 1 AND result = 'A'
+)
+SELECT
+    team1,
+    team2,
+    SUM(home_win) AS home_wins,
+    SUM(away_win) AS away_wins
+FROM wins
+GROUP BY team1, team2
+ORDER BY away_wins DESC, team1, team2;
+
+/*Sample result
+Manchester United,Aston Villa,26,18
+Arsenal,Aston Villa,20,17
+...*/
+
+-- Create a view, called Wins, with the query for the previous question.
+DROP VIEW IF EXISTS Wins;
+CREATE VIEW Wins AS
+WITH hw AS (
+    SELECT TRIM(home) AS team1, TRIM(visitor) AS team2, COUNT(*) AS home_wins
+    FROM England
+    WHERE season >= 1980 AND tier = 1 AND result = 'H'
+    GROUP BY TRIM(home), TRIM(visitor)
+),
+     aw AS (
+         SELECT TRIM(visitor) AS team1, TRIM(home) AS team2, COUNT(*) AS away_wins
+         FROM England
+         WHERE season >= 1980 AND tier = 1 AND result = 'A'
+         GROUP BY TRIM(visitor), TRIM(home)
+     )
+SELECT
+    COALESCE(hw.team1, aw.team1) AS team1,
+    COALESCE(hw.team2, aw.team2) AS team2,
+    COALESCE(hw.home_wins, 0)  AS home_wins,
+    COALESCE(aw.away_wins, 0)  AS away_wins
+FROM hw
+         LEFT JOIN aw ON aw.team1 = hw.team1 AND aw.team2 = hw.team2
+
+UNION ALL
+
+SELECT
+    aw.team1,
+    aw.team2,
+    0                 AS home_wins,
+    aw.away_wins
+FROM aw
+         LEFT JOIN hw ON hw.team1 = aw.team1 AND hw.team2 = aw.team2
+WHERE hw.team1 IS NULL;
+
+
+/*Q7 (2 pt)
+For each pair ('Arsenal', team2), report the number of home-wins and away-wins
+of Arsenal versus team2 and the number of home-wins and away-wins of team2 versus Arsenal
+(all since 1980).
+Order the results by the second number of away-wins in descending order.
+Use view W1.*/
+
+/*Your query here*/
+SELECT
+    a.team2                                  AS opponent,
+    COALESCE(a.home_wins, 0)                 AS arsenal_home_wins_vs_opponent,
+    COALESCE(a.away_wins, 0)                 AS arsenal_away_wins_vs_opponent,
+    COALESCE(b.home_wins, 0)                 AS opponent_home_wins_vs_arsenal,
+    COALESCE(b.away_wins, 0)                 AS opponent_away_wins_vs_arsenal
+FROM W1 AS a
+         LEFT JOIN W1 AS b
+                   ON b.team1 = a.team2 AND b.team2 = 'Arsenal'
+WHERE a.team1 = 'Arsenal'
+ORDER BY opponent_away_wins_vs_arsenal DESC, opponent;
+
+
+/* Q7 — Arsenal vs Opponent + Opponent vs Arsenal (order by opponent’s away-wins at Arsenal desc) */
+
+/*Sample result
+Arsenal,Liverpool,14,8,20,11
+Arsenal,Manchester United,16,5,19,11
+...*/
+
+/*Drop view Wins.*/
+DROP VIEW Wins;
+
+/*Build two bar-charts, one visualizing the two home-wins columns, and the other visualizing the two away-wins columns.*/
+
+
+/*Q8 (2 pt)
+Winning at home is easier than winning as visitor.
+Nevertheless, some teams have won more games as a visitor than when at home.
+Find the team in Germany that has more away-wins than home-wins in total.
+Print the team name, number of home-wins, and number of away-wins.*/
+
+/*Your query here*/
+WITH win_counts AS (
+    -- home wins by team
+    SELECT home AS team, COUNT(*) AS home_wins, 0 AS away_wins
+    FROM Germany
+    WHERE hgoal > vgoal
+    GROUP BY home
+
+    UNION ALL
+
+    -- away wins by team
+    SELECT visitor AS team, 0 AS home_wins, COUNT(*) AS away_wins
+    FROM Germany
+    WHERE vgoal > hgoal
+    GROUP BY visitor
+)
+SELECT
+    team,
+    SUM(home_wins) AS home_wins,
+    SUM(away_wins) AS away_wins
+FROM win_counts
+GROUP BY team
+HAVING SUM(away_wins) > SUM(home_wins)
+ORDER BY (SUM(away_wins) - SUM(home_wins)) DESC, team;
+
+/*Sample result
+Wacker Burghausen	...	...*/
+
+
+/*Q9 (3 pt)
+One of the beliefs many people have about Italian soccer teams is that they play much more defense than offense.
+Catenaccio or The Chain is a tactical system in football with a strong emphasis on defence.
+In Italian, catenaccio means "door-bolt", which implies a highly organised and effective backline defence
+focused on nullifying opponents' attacks and preventing goal-scoring opportunities.
+In this question we would like to see whether the number of goals in Italy is on average smaller than in England.
+
+Find the average total goals per season in England and Italy since the 1970 season.
+The results should be (season, england_avg, italy_avg) triples, ordered by season.
+
+Hint.
+Subquery 1: Find the average total goals per season in England.
+Subquery 2: Find the average total goals per season in Italy
+   (there is no totgoal in table Italy. Take hgoal+vgoal).
+Join the two subqueries on season.
+*/
+
+/*Your query here*/
+SELECT
+    e.season,
+    ROUND(e.england_avg, 2) AS england_avg,
+    ROUND(i.italy_avg,   2) AS italy_avg
+FROM
+    ( SELECT season, AVG(totgoal)       AS england_avg
+      FROM England
+      WHERE season >= 1970
+      GROUP BY season
+    ) AS e
+        JOIN
+    ( SELECT season, AVG(hgoal + vgoal) AS italy_avg
+      FROM Italy
+      WHERE season >= 1970
+      GROUP BY season
+    ) AS i
+    ON e.season = i.season
+ORDER BY e.season;
+
+-- Build a line chart visualizing the results. What do you observe?
+
+/*Sample result
+1970,2.5290927021696252,2.1041666666666667
+1971,2.5922090729783037,2.0125
+...*/
+
+
+/*Q10 (3 pt)
+Find the number of games in France and England in tier 1 for each goal difference.
+Return (goaldif, france_games, eng_games) triples, ordered by the goal difference.
+Normalize the number of games returned dividing by the total number of games for the country in tier 1,
+e.g. 1.0*COUNT(*)/(select count(*) from france where tier=1)  */
+
+/*Your query here*/
+WITH
+    diffs AS (
+        SELECT DISTINCT goaldif FROM France  WHERE tier = 1
+        UNION
+        SELECT DISTINCT goaldif FROM England WHERE tier = 1
+    ),
+    fr AS (
+        SELECT
+            goaldif,
+            1.0 * COUNT(*) / (SELECT COUNT(*) FROM France WHERE tier = 1) AS france_games
+        FROM France
+        WHERE tier = 1
+        GROUP BY goaldif
+    ),
+    en AS (
+        SELECT
+            goaldif,
+            1.0 * COUNT(*) / (SELECT COUNT(*) FROM England WHERE tier = 1) AS eng_games
+        FROM England
+        WHERE tier = 1
+        GROUP BY goaldif
+    )
+SELECT
+    d.goaldif,
+    COALESCE(fr.france_games, 0) AS france_games,
+    COALESCE(en.eng_games, 0)    AS eng_games
+FROM diffs d
+         LEFT JOIN fr ON fr.goaldif = d.goaldif
+         LEFT JOIN en ON en.goaldif = d.goaldif
+ORDER BY d.goaldif;
+/*Sample result
+-8,0.00011369234850494562,0.000062637018477920450987
+-7,0.00011369234850494562,0.00010439503079653408
+...*/
+
+/*Visualize the results using a barchart.*/
+
+
+/*Q11 (2 pt)
+Find all the seasons when England had higher average total goals than France.
+Consider only tier 1 for both countries.
+Return (season,england_avg,france_avg) triples.
+Order by season.*/
+
+/*Your query here*/
+SELECT
+    e.season,
+    ROUND(e.england_avg, 6) AS england_avg,
+    ROUND(f.france_avg, 6)  AS france_avg
+FROM
+    (
+        SELECT season, AVG(totgoal) AS england_avg
+        FROM England
+        WHERE tier = 1
+        GROUP BY season
+    ) AS e
+        JOIN
+    (
+        SELECT season, AVG(totgoal) AS france_avg
+        FROM France
+        WHERE tier = 1
+        GROUP BY season
+    ) AS f
+    ON e.season = f.season
+WHERE e.england_avg > f.france_avg
+ORDER BY e.season;
+
+/*Sample result
+1936,3.3658008658008658,3.3041666666666667
+1952,3.2640692640692641,3.1437908496732026
+...*/
